@@ -5,7 +5,8 @@ from cp_otp import strxor, intercept_in, intercept_out
 class CPOTOPTests(unittest.TestCase):
     def test_strxor(self):
         tests = (
-            ("makes", "sense", b'\x1e\x04\x05\x16\x16'),
+            ("makes", "sense", b'\x1e\x04\x05\x16\x16'),    # Normal strings
+            ("\x00\x00", "\x00\x01", b'\x00\x01'),          # Null bytes
         )
         for w1, w2, ok in tests:
             self.assertEqual(strxor(w1, w2), ok)
