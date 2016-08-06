@@ -28,14 +28,24 @@ static PyObject *cp_otp_version(PyObject *self, PyObject *args) {
 }
 
 
-static void strxor(char **dest, char *message, char *key) {
-    int len, i;
+static void strxor(char **dest, char *message, char *key, int len, int change) {
+
+    int i;
     char *output;
-    len = strlen(message);
     output = malloc(sizeof(char) * (len + 1));
+
     for (i = 0; i < len; i ++) {
+
         output[i] = message[i] ^ key[i];
+
+        // Some black magic to avoid NULL-bytes in our output.
+        if (change && output[i] == 0x00) {
+            key[i] += 1;
+            i--;
+        }
+
     }
+
     output[i] = 0x00;
     *dest = output;
 }
@@ -45,26 +55,24 @@ static void strxor(char **dest, char *message, char *key) {
 static PyObject *cp_otp_strxor(PyObject *self, PyObject *args) {
 
     char * message = NULL;
+    int message_length;
     char * key = NULL;
+    int key_length;
     char * output = NULL;
 
-    if (!PyArg_ParseTuple(args, "ss", &message, &key)) {
+    if (!PyArg_ParseTuple(args, "s#s#", &message, &message_length, &key, &key_length)) {
         PyErr_SetString(PyExc_ValueError, "The strxor method was called with invalid arguments.");
         return NULL;
     }
 
     // TODO -- we're using strlen, does this work well with keys that contain the NULL character?
-    if (strlen(message) != strlen(key)) {
+    if (message_length != key_length) {
         PyErr_SetString(PyExc_ValueError, "The message and the key need to be of the same length.");
         return NULL;
     }
 
-    int len;
-    len = strlen(message);
-
-    strxor(&output, message, key);
-
-    return PyBytes_FromStringAndSize(output, len);
+    strxor(&output, message, key, message_length, 0);
+    return PyBytes_FromStringAndSize(output, message_length);
 }
 
 
@@ -104,54 +112,97 @@ static PyObject *cp_otp_get_random_key(PyObject *self, PyObject *args) {
     return PyBytes_FromStringAndSize(output, len);
 }
 
+#define ERR_MSG_MAX_LEN     512
+
+#define SECRET_MESSAGE      "Online=1; UserIsPresident=0; ActivateSuperMassiveBlackHole=0;"
+#define SANITY_CHECK        "Online=1;"
+#define SANITY_CHECK_MSG    "The message seems to be corrupted, or the party seems to be offline."
+#define MESSAGE_OK_A        "ActivateSuperMassiveBlackHole=1;"
+#define MESSAGE_OK_A_MSG    "Message received, nothing to do."
+#define MESSAGE_OK_B        "UserIsPresident=1;"
+#define MESSAGE_OK_B_MSG    "Sorry, only the President is authorised to do this."
+
+#define TAG_SENDER          ">   SENDER >>"
+#define TAG_RECEIVER        "< RECEIVER <<"
 
 char * secretKey = NULL;
 
-#define MESSAGE_LENGTH 128
 #define CPOTP_INTERCEPT_IN_SUMMARY "string intercept_in()   Get the encrypted secret message"
-static PyObject *cp_otp_intercept_in(PyObject *self, PyObject *args) {
+static PyObject *cp_otp_intercept_in(PyObject *self, PyObject *args, PyObject *kw) {
 
-    srand(time(NULL));
+    int silent = 0;
+    static char *kwlist[] = {"silent", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "|p", kwlist, &silent)) {
+        return NULL;
+    }
 
-    // First, generate a secret random key
-    secretKey = malloc(sizeof(char) * (MESSAGE_LENGTH+1));
-    rand_str(secretKey, MESSAGE_LENGTH);
-    if (DEBUG) printf("> Secret key: %s\n", secretKey);
+    char * message = SECRET_MESSAGE;
+    if (!silent) printf("%s '%s'\n", TAG_SENDER, message);
 
-    char * message = NULL;
-    message = malloc(sizeof(char) * (MESSAGE_LENGTH+1));
-    rand_str(message, MESSAGE_LENGTH);
-    if (DEBUG) printf("> Secret message: %s\n", message);
+    int message_length;
+    message_length = strlen(message);
+
+    secretKey = malloc(sizeof(char) * (message_length+1));
+    rand_str(secretKey, message_length);
+
+    if (DEBUG && !silent) printf("%s Secret key: %s\n", TAG_SENDER, secretKey);
 
     char * encrypted = NULL;
-    strxor(&encrypted, message, secretKey);
-    // if (DEBUG) printf("> Encrypted message: %s\n", encrypted);
+    strxor(&encrypted, message, secretKey, message_length, 1);
 
-    return PyBytes_FromStringAndSize(encrypted, MESSAGE_LENGTH);
+    return PyBytes_FromStringAndSize(encrypted, message_length);
 }
 
 
+
 #define CPOTP_INTERCEPT_OUT_SUMMARY "bool intercept_out()   Check the encrypted secret message"
-static PyObject *cp_otp_intercept_out(PyObject *self, PyObject *args) {
+static PyObject *cp_otp_intercept_out(PyObject *self, PyObject *args, PyObject *kw) {
 
     if (secretKey == NULL) {
         PyErr_SetString(PyExc_ValueError, "You need to call intercept_in first.");
         return NULL;
     }
 
-    char *encrypted = NULL;
-    char *decrypted = NULL;
+    char errMessage[ERR_MSG_MAX_LEN];
 
-    if (!PyArg_ParseTuple(args, "s", &encrypted)) {
+    char *encrypted = NULL;
+    char *decrypted;
+    int size;
+    int silent = 0;
+
+    static char *kwlist[] = {"encrypted", "silent", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "s#|p", kwlist, &encrypted, &size, &silent)) {
         PyErr_SetString(PyExc_ValueError, "You need to pass the encrypted message as an argument.");
         return NULL;
     }
 
-    strxor(&decrypted, encrypted, secretKey);
+    strxor(&decrypted, encrypted, secretKey, size, 0);
 
-    if (DEBUG) printf("< Received message: %s", decrypted);
+    if (strlen(decrypted) != strlen(secretKey)) {
+        sprintf(errMessage,
+                "The size of the received message is unexpected. Expected %d, received %d.",
+                (int) strlen(secretKey), (int) strlen(decrypted));
+        PyErr_SetString(PyExc_ValueError, errMessage);
+        return NULL;
+    }
 
-    Py_RETURN_FALSE;
+    if (!silent) printf("%s '%s'\n", TAG_RECEIVER, decrypted);
+
+    if (strstr(decrypted, SANITY_CHECK) == NULL) {
+        if (!silent) printf("%s (!) %s", TAG_SENDER, SANITY_CHECK_MSG);
+        Py_RETURN_FALSE;
+    }
+
+    if (strstr(decrypted, MESSAGE_OK_A) == NULL) {
+        if (!silent) printf("%s (!) %s", TAG_SENDER, MESSAGE_OK_A_MSG);
+        Py_RETURN_FALSE;
+    }
+
+    if (strstr(decrypted, MESSAGE_OK_B) == NULL) {
+        if (!silent) printf("%s (!) %s", TAG_SENDER, MESSAGE_OK_B_MSG);
+        Py_RETURN_FALSE;
+    }
+
     Py_RETURN_TRUE;
 }
 
@@ -165,8 +216,8 @@ static PyMethodDef cp_otp_module_methods[] = {
         { "version", cp_otp_version, METH_NOARGS, VERSION_SUMMARY },
         { "strxor", cp_otp_strxor, METH_VARARGS, CPOTP_STRXOR_SUMMARY },
         { "get_random_key", cp_otp_get_random_key, METH_VARARGS, CPOTP_GET_RANDOM_KEY_SUMMARY },
-        { "intercept_in", cp_otp_intercept_in, METH_VARARGS, CPOTP_INTERCEPT_IN_SUMMARY },
-        { "intercept_out", cp_otp_intercept_out, METH_VARARGS, CPOTP_INTERCEPT_OUT_SUMMARY },
+        { "intercept_in", (PyCFunction) cp_otp_intercept_in, METH_VARARGS|METH_KEYWORDS, CPOTP_INTERCEPT_IN_SUMMARY },
+        { "intercept_out", (PyCFunction) cp_otp_intercept_out, METH_VARARGS|METH_KEYWORDS, CPOTP_INTERCEPT_OUT_SUMMARY },
         { NULL, NULL,}
 };
 
@@ -185,5 +236,6 @@ static struct PyModuleDef cp_otpmodule = {
 PyMODINIT_FUNC
 PyInit_cp_otp(void)
 {
+    srand(time(NULL));
     return PyModule_Create(&cp_otpmodule);
 }
