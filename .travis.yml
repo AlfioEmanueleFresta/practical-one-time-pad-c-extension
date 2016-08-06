@@ -2,6 +2,9 @@ language: python
 python:
 - '3.4'
 - '3.5'
+compiler:
+  - clang
+  - gcc
 before_script:
 - sudo python setup.py build --force install
 
