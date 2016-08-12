@@ -19,7 +19,7 @@
 //	Public Methods in Module
 //************************************************************
 
-#define DEBUG 1
+#define DEBUG 0
 
 #define VERSION_SUMMARY "string version()   Provides version string for module."
 static PyObject *cp_otp_version(PyObject *self, PyObject *args) {
@@ -189,17 +189,17 @@ static PyObject *cp_otp_intercept_out(PyObject *self, PyObject *args, PyObject *
     if (!silent) printf("%s '%s'\n", TAG_RECEIVER, decrypted);
 
     if (strstr(decrypted, SANITY_CHECK) == NULL) {
-        if (!silent) printf("%s (!) %s", TAG_SENDER, SANITY_CHECK_MSG);
+        if (!silent) printf("%s (!) %s\n", TAG_SENDER, SANITY_CHECK_MSG);
         Py_RETURN_FALSE;
     }
 
     if (strstr(decrypted, MESSAGE_OK_A) == NULL) {
-        if (!silent) printf("%s (!) %s", TAG_SENDER, MESSAGE_OK_A_MSG);
+        if (!silent) printf("%s (!) %s\n", TAG_SENDER, MESSAGE_OK_A_MSG);
         Py_RETURN_FALSE;
     }
 
     if (strstr(decrypted, MESSAGE_OK_B) == NULL) {
-        if (!silent) printf("%s (!) %s", TAG_SENDER, MESSAGE_OK_B_MSG);
+        if (!silent) printf("%s (!) %s\n", TAG_SENDER, MESSAGE_OK_B_MSG);
         Py_RETURN_FALSE;
     }
 
