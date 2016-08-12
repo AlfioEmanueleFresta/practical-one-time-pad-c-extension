@@ -5,6 +5,8 @@ python:
 compiler:
   - clang
   - gcc
+before_install:
+- sudo apt-get install python3-dev -y
 before_script:
 - sudo python setup.py build --force install
 
