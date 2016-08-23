@@ -114,13 +114,14 @@ static PyObject *cp_otp_get_random_key(PyObject *self, PyObject *args) {
 
 #define ERR_MSG_MAX_LEN     512
 
-#define SECRET_MESSAGE      "Online=1; UserIsPresident=0; ActivateSuperMassiveBlackHole=0;"
+#define SECRET_MESSAGE      "Online=1; UserIsPresident=0; GenerateSupermassiveBlackHole=0;"
 #define SANITY_CHECK        "Online=1;"
 #define SANITY_CHECK_MSG    "The message seems to be corrupted, or the party seems to be offline."
-#define MESSAGE_OK_A        "ActivateSuperMassiveBlackHole=1;"
+#define MESSAGE_OK_A        "GenerateSupermassiveBlackHole=1;"
 #define MESSAGE_OK_A_MSG    "Message received, nothing to do."
 #define MESSAGE_OK_B        "UserIsPresident=1;"
 #define MESSAGE_OK_B_MSG    "Sorry, only the President is authorised to do this."
+#define MESSAGE_OK          "A new supermassive black hole has been generated."
 
 #define TAG_SENDER          ">   SENDER >>"
 #define TAG_RECEIVER        "< RECEIVER <<"
@@ -203,6 +204,7 @@ static PyObject *cp_otp_intercept_out(PyObject *self, PyObject *args, PyObject *
         Py_RETURN_FALSE;
     }
 
+    if (!silent) printf("%s %s\n", TAG_SENDER, MESSAGE_OK);
     Py_RETURN_TRUE;
 }
 
